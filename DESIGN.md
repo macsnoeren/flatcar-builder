@@ -5,8 +5,8 @@
 Flatcar Builder is a stand-alone tool that turns a **deployment directory** into installable Flatcar nodes and update bundles. The tool is on dependent on specific applications or deployments or any other application: everything specific lives in the deployment directory (the nodes) and in the docker apps. A new deployment changes nothing in the tool.
 
 ```
-build-flatcar.sh ../jmnl-deployment       --mode app --node neo-jmnl-node
-build-flatcar.sh ../ironbridge-deployment --mode usb
+build-flatcar.sh ../server-deployment       --mode app --node neo-jmnl-node
+build-flatcar.sh ../server-deployment --mode usb
 ```
 
 ### Functional requirements
