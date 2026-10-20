@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""A stand-in for docker: answers what the builder and the node scripts ask of
+it and appends every call to $STUB_LOG. Nothing is built, pulled or run.
+
+  STUB_DOCKER_FAIL=1   every call fails (proves a step does not use docker)
+  STUB_COMPOSE=1       the compose plugin is present (default: absent)
+"""
+import os, sys
+from pathlib import Path
+
+args = sys.argv[1:]
+log = os.environ.get("STUB_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write("docker " + " ".join(args) + "\n")
+if os.environ.get("STUB_DOCKER_FAIL") == "1":
+    sys.exit(1)
+
+cmd = args[0] if args else ""
+if cmd == "compose":
+    if os.environ.get("STUB_COMPOSE") != "1":
+        sys.exit(1)
+    if "config" in args:
+        import yaml
+        files = [Path("compose.yml")] + sorted(Path("compose.d").glob("*.yml"))
+        for p in files:
+            try:
+                yaml.safe_load(p.read_text())
+            except yaml.YAMLError as e:
+                print(f"{p}: {e}", file=sys.stderr)
+                sys.exit(15)
+    sys.exit(0)
+if cmd == "save" and "-o" in args:
+    Path(args[args.index("-o") + 1]).write_text("stub image tar " + args[1] + "\n")
+elif cmd == "run":
+    for a in args:
+        if a.endswith(":/work"):
+            Path(a[: -len(":/work")], "config.ign").write_text('{"ignition":{"version":"3.3.0"},"_stub":true}\n')
+sys.exit(0)

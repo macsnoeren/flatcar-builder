@@ -1,0 +1,6 @@
+# Build output of the examples.
+examples/*/build/
+TASKS*.md
+
+# Python bytecode.
+__pycache__/

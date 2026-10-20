@@ -1,0 +1,151 @@
+#!/bin/bash
+#
+# Maintenance shell of the IronBridge Flatcar maintenance USB.
+#
+# Started by flatcar-maintenance.service on tty1 once the live system is up.
+# It mounts the UPDATE partition, reports which deployment builds are on the
+# stick, and hands over an interactive root shell.
+#
+# The stick may carry several builds side by side, each in its own directory
+# named after the date it was produced. Builds are detected by their structure
+# rather than by their name -- a directory counts as a build when it holds
+# scripts/install-flatcar.sh -- and are listed in reverse name order, so a dated
+# name puts the most recent build first. The name is used rather than the
+# timestamp because copying a build onto the stick without -a resets the
+# timestamp but never the name.
+#
+
+set -u
+
+UPDATE_LABEL="${UPDATE_LABEL:-IB-UPDATE}"
+UPDATE_MOUNT="/update"
+
+echo
+echo "=============================================="
+echo "   IronBridge Flatcar Maintenance Environment"
+echo "=============================================="
+echo
+
+# -----------------------------------------------------------------------------
+# Mount the UPDATE partition
+# -----------------------------------------------------------------------------
+
+mkdir -p "$UPDATE_MOUNT"
+
+UPDATE_DEVICE="$(blkid -L "$UPDATE_LABEL" 2>/dev/null || true)"
+
+if [ -z "$UPDATE_DEVICE" ]; then
+    echo "WARNING: no filesystem with label $UPDATE_LABEL was found."
+    echo "         The USB stick may not have been written completely."
+elif mountpoint -q "$UPDATE_MOUNT"; then
+    echo "UPDATE partition: $UPDATE_DEVICE (already mounted)"
+elif mount "$UPDATE_DEVICE" "$UPDATE_MOUNT"; then
+    echo "UPDATE partition: $UPDATE_DEVICE mounted at $UPDATE_MOUNT"
+else
+    echo "WARNING: $UPDATE_DEVICE could not be mounted."
+fi
+
+# -----------------------------------------------------------------------------
+# Disks of this node
+# -----------------------------------------------------------------------------
+
+echo
+echo "Disks in this machine:"
+lsblk -d -o NAME,SIZE,MODEL,TRAN 2>/dev/null | sed 's/^/  /'
+
+# -----------------------------------------------------------------------------
+# Find the builds on the stick
+# -----------------------------------------------------------------------------
+
+BUILDS=()
+
+while IFS= read -r dir; do
+    BUILDS+=("$dir")
+done < <(
+    for candidate in "$UPDATE_MOUNT" "$UPDATE_MOUNT"/*; do
+        [ -d "$candidate" ] || continue
+        [ -f "$candidate/scripts/install-flatcar.sh" ] || continue
+        printf '%s\n' "$candidate"
+    done | sort -r
+)
+
+echo
+echo "=============================================="
+echo "Deployment builds on this stick (most recent name first)"
+echo "=============================================="
+echo
+
+if [ "${#BUILDS[@]}" -eq 0 ]; then
+
+    echo "  None found."
+    echo
+    echo "  A build is a directory under $UPDATE_MOUNT containing"
+    echo "  scripts/install-flatcar.sh. Copy one onto the UPDATE partition,"
+    echo "  or check that the partition was mounted above."
+
+else
+
+    index=0
+
+    for dir in "${BUILDS[@]}"; do
+
+        index=$((index + 1))
+
+        name="$(basename "$dir")"
+        [ "$dir" = "$UPDATE_MOUNT" ] && name="(root of $UPDATE_MOUNT)"
+
+        stamp="$(date -d "@$(stat -c %Y "$dir")" '+%Y-%m-%d %H:%M' 2>/dev/null || echo unknown)"
+
+        version=""
+        if [ -f "$dir/README.txt" ]; then
+            version="$(awk -F': *' '/^Flatcar version:/ {print $2; exit}' "$dir/README.txt")"
+        fi
+
+        printf '  %d. %s\n' "$index" "$name"
+        printf '     modified %s' "$stamp"
+        [ -n "$version" ] && printf '   Flatcar %s' "$version"
+        printf '\n'
+
+        if [ -d "$dir/nodes" ]; then
+            nodes="$(ls -1 "$dir/nodes" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+            [ -n "$nodes" ] && printf '     nodes: %s\n' "$nodes"
+        fi
+
+        echo
+    done
+
+    NEWEST="${BUILDS[0]}"
+
+    echo "=============================================="
+    echo "Installing a node"
+    echo "=============================================="
+    echo
+    echo "  The first build from the list is used below. Substitute another"
+    echo "  directory from the list to install a different one."
+    echo
+    echo "      cd $NEWEST"
+    echo "      ./scripts/install-flatcar.sh <node-name> [device]"
+    echo
+    echo "  The target device defaults to INSTALL_DEVICE from the node's"
+    echo "  node.env. The machine has to be rebooted afterwards."
+    echo
+    echo "  update-app.sh and update-os.sh are run on an already installed"
+    echo "  node, not from this USB stick."
+    echo
+
+fi
+
+# -----------------------------------------------------------------------------
+# Root shell
+# -----------------------------------------------------------------------------
+
+echo "Opening root shell. Type 'exit' to return to this overview."
+echo
+
+if [ "${#BUILDS[@]}" -gt 0 ]; then
+    cd "${BUILDS[0]}" || cd /
+else
+    cd "$UPDATE_MOUNT" 2>/dev/null || cd /
+fi
+
+exec /bin/bash --login

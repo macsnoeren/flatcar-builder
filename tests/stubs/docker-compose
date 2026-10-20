@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Stand-in for /opt/bin/docker-compose. 'ps' prints $STUB_PS (lines of name<TAB>state<TAB>exitcode).
+echo "docker-compose $*" >> "${STUB_LOG:-/dev/null}"
+for a in "$@"; do
+  if [[ "${a}" == ps ]]; then printf '%b' "${STUB_PS:-}"; fi
+done
+exit 0

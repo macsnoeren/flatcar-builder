@@ -1,0 +1,11 @@
+services:
+  web:
+    image: nginx:1.27-alpine
+    container_name: web
+    ports:
+      - "80:80"
+    volumes:
+      - /etc/example/web:/usr/share/nginx/html:ro
+    environment:
+      NODE_NAME: ${NODE_NAME}
+    restart: unless-stopped

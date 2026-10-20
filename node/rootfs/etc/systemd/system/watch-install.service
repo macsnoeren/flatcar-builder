@@ -1,0 +1,21 @@
+# The host applier: installs an approved bundle from /opt/deploy. See
+# /opt/bin/watch-install.sh. It logs to the journal and to
+# /var/log/watch-install.log; nothing goes over the network.
+[Unit]
+Description=Install approved bundles from /opt/deploy
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+Environment=DEPLOY_DIR=/opt/deploy
+Environment=INSTALL_SCRIPT=install.sh
+Environment=DELAY=30
+Environment=KEEP_WORK_DIRS=3
+Environment=LOG_FILE=/var/log/watch-install.log
+ExecStart=/usr/bin/bash /opt/bin/watch-install.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

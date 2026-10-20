@@ -1,0 +1,38 @@
+[Unit]
+Description=IronBridge Flatcar Maintenance Shell
+Documentation=file:///usr/local/bin/flatcar-maintenance
+After=local-fs.target systemd-udev-settle.service
+
+# The maintenance shell owns tty1. Without this, agetty and the shell compete
+# for the same terminal and neither is usable.
+Conflicts=getty@tty1.service
+Before=getty@tty1.service
+
+[Service]
+# Not Type=oneshot: the shell never exits, and a oneshot unit that never
+# returns keeps multi-user.target from ever being reached, which looks like a
+# hung boot. Type=idle lets the rest of the boot finish first.
+Type=idle
+
+ExecStart=/usr/local/bin/flatcar-maintenance
+
+# tty-force takes the terminal away from whatever else holds it. Plain "tty"
+# waits instead, and the shell never gets input.
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+# Give the operator the terminal back if they exit the shell.
+Restart=always
+RestartSec=1
+
+KillMode=process
+IgnoreSIGPIPE=no
+SendSIGHUP=yes
+
+[Install]
+WantedBy=multi-user.target

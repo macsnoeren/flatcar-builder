@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Stand-in for systemctl: logs and succeeds. 'is-active' answers $STUB_ACTIVE (default 0).
+echo "systemctl $*" >> "${STUB_LOG:-/dev/null}"
+case "${1:-}" in
+  is-active) exit "${STUB_ACTIVE:-0}" ;;
+esac
+exit 0

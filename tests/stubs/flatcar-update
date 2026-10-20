@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "flatcar-update $*" >> "${STUB_LOG:-/dev/null}"
+exit "${STUB_FLATCAR_UPDATE_RC:-0}"

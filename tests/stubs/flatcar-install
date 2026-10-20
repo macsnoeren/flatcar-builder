@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "flatcar-install $*" >> "${STUB_LOG:-/dev/null}"
+exit 1

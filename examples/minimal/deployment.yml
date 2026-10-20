@@ -1,0 +1,16 @@
+# A deployment with one node and one app — the smallest thing Flatcar Builder
+# builds. Copy it as the start of your own:
+#
+#   build-flatcar.sh examples/minimal --check
+#   build-flatcar.sh examples/minimal --mode usb
+builder: ">=0.1,<1"
+
+flatcar:
+  channel: stable
+  version: current          # pin this before anything goes to production
+  arch: amd64-usr
+compose_version: v2.39.1
+
+access:
+  # Replace with your own key: ssh-keygen -t ed25519 -a 100 -f keys/id_ed25519
+  ssh_authorized_keys_files: [keys/example.pub]

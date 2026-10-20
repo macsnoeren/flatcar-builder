@@ -1,0 +1,14 @@
+install_device: /dev/vda
+
+network:
+  interfaces:
+    - name: eth0
+      mode: dhcp
+
+apps:
+  - name: web
+    compose: compose.d/10-web.yml
+    images:
+      - image: nginx:1.27-alpine
+        pull: true
+    files: apps/web/files            # -> /etc/example/web/index.html

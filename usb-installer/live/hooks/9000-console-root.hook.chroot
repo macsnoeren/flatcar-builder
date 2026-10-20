@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Allow root to log in on the console without a password.
+#
+# The maintenance shell on tty1 already runs as root, so this only affects the
+# other virtual terminals and the serial console. Its purpose is to keep the
+# USB usable when flatcar-maintenance.service fails to start, which would
+# otherwise leave a login prompt with no known credentials.
+#
+# The USB grants full root access to anyone holding it. Treat it as a physical
+# key and store it accordingly. Delete this hook if the deployment requires a
+# password on the console instead.
+#
+
+set -e
+
+passwd -d root
+
+# Serial console, for headless server hardware.
+systemctl enable serial-getty@ttyS0.service 2>/dev/null || true

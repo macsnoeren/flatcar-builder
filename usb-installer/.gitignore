@@ -1,0 +1,11 @@
+# Build artefacts
+output/*.img
+work/
+
+# live-build cache: the bootstrap stage and downloaded packages
+cache/
+
+# The Flatcar update payload is a large binary and is not source. The scripts
+# that go with it may be committed; see update/README.md.
+update/flatcar_production_update.gz
+update/SHA256SUMS

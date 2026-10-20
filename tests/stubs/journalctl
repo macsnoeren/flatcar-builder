@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+echo "journalctl $*" >> "${STUB_LOG:-/dev/null}"

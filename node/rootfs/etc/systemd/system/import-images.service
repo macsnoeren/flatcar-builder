@@ -1,0 +1,16 @@
+# Loads the image tars in /opt/images into docker at boot. The node never
+# reaches a registry; these tars are the only images it has.
+[Unit]
+Description=Load offline docker images
+After=docker.service docker.socket
+Requires=docker.service
+ConditionDirectoryNotEmpty=/opt/images
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sh -c 'until /usr/bin/docker info >/dev/null 2>&1; do echo "waiting for the docker daemon"; sleep 1; done'
+ExecStart=/bin/sh -c 'for f in /opt/images/*.tar; do /usr/bin/docker load -i "$f"; done'
+
+[Install]
+WantedBy=multi-user.target

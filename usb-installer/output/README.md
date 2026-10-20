@@ -1,0 +1,1 @@
+In this output directory the USB image file is created.

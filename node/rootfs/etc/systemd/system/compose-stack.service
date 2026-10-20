@@ -1,0 +1,32 @@
+# The node's compose stack, brought up at boot.
+#
+# The stack is started DETACHED and this unit does not supervise it: docker
+# does, through the 'restart:' policy of each service. An attached 'up' owns
+# every container, so one signal to it stops the whole stack; with 'up -d' a
+# container that dies is restarted by its own policy and nothing else notices.
+# Type=oneshot + RemainAfterExit makes "active" mean "the stack was brought up".
+# Restart=on-failure only retries 'up -d' itself failing (a docker daemon that
+# is not ready yet); it cannot fire because a container exited.
+[Unit]
+Description=Compose stack of this node
+After=docker.service import-images.service
+Requires=docker.service import-images.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+# Starting a few dozen containers on a cold boot can take a while; a timeout
+# here would be a node that gives up on itself.
+TimeoutStartSec=0
+# NODE_NAME and HOSTNAME, for ${NODE_NAME} in the compose files.
+EnvironmentFile=/etc/flatcar-builder/node.env
+# No 'down' first: that turns every restart into a full teardown.
+ExecStart=/opt/bin/docker-compose -f /opt/compose/compose.yml up -d --remove-orphans
+# 'stop', not 'down': stopping the unit stops the containers, it does not
+# delete them and their network.
+ExecStop=/opt/bin/docker-compose -f /opt/compose/compose.yml stop
+
+[Install]
+WantedBy=multi-user.target
