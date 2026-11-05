@@ -44,6 +44,12 @@ class Arguments(Scratch):
             self.assertEqual(r.returncode, 2, mode)
             self.assertIn("--app only works with --mode app", r.stderr)
 
+    def test_with_secrets_only_with_usb(self):
+        for mode in ("os", "app"):
+            r = self.build("--mode", mode, "--with-secrets")
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("--with-secrets only works with --mode usb", r.stderr)
+
     def test_missing_deployment_dir_names_the_path(self):
         r = self.build("--check")
         self.assertEqual(r.returncode, 1)

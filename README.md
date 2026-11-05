@@ -46,7 +46,7 @@ new deployment.
 
 ```
 build-flatcar.sh <deployment-dir> [--mode usb|os|app] [--node N]... [--app A]...
-                 [--out DIR] [--check]
+                 [--with-secrets] [--out DIR] [--check]
 ```
 
 | Mode | What it produces | Apps | Reboots the node |
@@ -58,6 +58,8 @@ build-flatcar.sh <deployment-dir> [--mode usb|os|app] [--node N]... [--app A]...
 
 - `--node` may be repeated; the default is every node of the deployment.
 - `--app` only works with `--mode app`, and each app must exist on every chosen node.
+- `--with-secrets` only works with `--mode usb`: it also puts the secrets on the USB, unencrypted.
+  Without it, the build warns about every node that has secrets and still needs an app bundle.
 - Output goes to `<deployment-dir>/build/` unless `--out` says otherwise: `work/` and `usb/`
   are rebuilt on every run, `bundles/` is kept (each tar is timestamped).
 
@@ -72,7 +74,7 @@ my-deployment/
     node.yml                hostname, install device, network, apps
     compose.d/*.yml         compose part(s) per app
     files/                  overlay onto / (Ignition and bundles)
-    secrets/                overlay onto /, bundles only — never on the USB, never in git
+    secrets/                overlay onto /, bundles (the USB with --with-secrets) — never in git
     apps/<app>/files/       files that belong to one app
     hooks/*.sh              post-update hooks
 ```
@@ -92,8 +94,9 @@ For an **empty** machine only: `flatcar-install` repartitions the whole disk.
    USB contents onto its UPDATE partition.
 3. Boot the machine from the stick. The maintenance shell lists the builds and nodes on it;
    install with `./scripts/install-flatcar.sh <node> [device]` and reboot.
-4. Send the node its first app bundle. The USB carries no secrets, so a freshly installed
-   node gets them only with that bundle.
+4. Send the node its first app bundle. By default the USB carries no secrets, so a freshly
+   installed node gets them only with that bundle. A USB built with `--with-secrets` holds
+   them, and the node is complete after this install.
 
 A rescue system with the `build/usb/` contents works as well: run
 `bash scripts/install-flatcar.sh <node> [device]` as root.

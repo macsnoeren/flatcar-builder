@@ -54,7 +54,7 @@ Unknown keys are errors: adding a field means updating the allowed-key sets (`DE
 `.network` files, `/opt/compose/compose.yml`) are merged into one `Tree`. The same tree goes into the
 Ignition config (USB) and into every full bundle, so a running node and a fresh one get changes the same
 way. A path in two layers is an error, except the paths in `OVERRIDABLE`. Secrets are a separate tree
-that only bundles carry — never Ignition/the USB.
+that bundles carry, and the USB with `--with-secrets` — never Ignition.
 
 **Compose.** The root `compose.yml` is generated from `node.yml` (`name:` + `include:` in app order);
 parts are copied to `/opt/compose/compose.d/` by file name. Nodes never reach a registry: every service

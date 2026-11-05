@@ -59,7 +59,7 @@ Only `deployment.yml` and `nodes/<node>/node.yml` are required. The names `commo
 explicitly in the YAML, so you may lay them out differently.
 
 Keep `secrets/` directories out of git. They exist only on the build machine and in the
-bundles built there.
+bundles built there, and on a USB built with `--with-secrets`.
 
 The smallest working deployment is [`examples/minimal`](examples/minimal): one node, one app,
 DHCP. Copy it as the start of your own and replace `keys/example.pub` with your own key.
@@ -374,8 +374,12 @@ Further:
 A `secrets` directory has the same form as `files`, at node level and per app. The
 difference is where it goes:
 
-- **Never on the USB.** The Ignition configuration on the stick is not encrypted, so a
-  freshly installed node has no secrets until its first app bundle.
+- **Not on the USB, unless you ask for it.** The stick is not encrypted, so by default a
+  freshly installed node has no secrets until its first app bundle, and the build says which
+  nodes need one. With `--mode usb --with-secrets` they are on the stick and
+  `install-flatcar.sh` copies them onto the node, so it comes up complete. The stick is then
+  as sensitive as the secrets.
+- **Never in the Ignition configuration**, which `flatcar-install` keeps on the node.
 - Installed as root:root with mode 0600. A directory created for a secret gets mode 0700.
 - Only the file names appear in the logs, never the contents.
 - A path may not be both a file and a secret.
@@ -483,10 +487,10 @@ links. What travels over a link is up to the apps.
 |---|---|---|---|
 | Platform, generated files, network | yes | yes | no |
 | `common_files`, node `files` | yes | yes | no |
-| Node `secrets` | **no** | yes | no |
+| Node `secrets` | only with `--with-secrets` | yes | no |
 | `directories` of the node | yes | yes | no |
 | Files, compose files, directories of an app | all apps | all apps | only X |
-| Secrets of an app | **no** | all apps | only X |
+| Secrets of an app | only with `--with-secrets` | all apps | only X |
 | Images | all apps | all apps | only X |
 | Hooks | no | yes (not when an os bundle installs a new Flatcar version) | only X |
 

@@ -15,7 +15,7 @@ build-flatcar.sh ../server-deployment --mode usb
 2. Data diodes: fixed MAC addresses and static neighbours (ARP does not work over a diode),
    also in a ring of nodes (§4.4).
 3. Config, files, environment and keys per application, within the node.
-4. Build forms: USB (everything), OS + apps, apps only and selected apps — for all nodes or
+4. Build forms: USB (everything; secrets with `--with-secrets`), OS + apps, apps only and selected apps — for all nodes or
    for selected nodes.
 5. One bundle per node: a bundle is sealed for one node and contains only what that node
    needs.
@@ -119,7 +119,7 @@ jmnl-deployment/
       node.yml
       compose.d/*.yml         one or more compose parts per app
       files/                  overlay onto /, public (ignition + bundle)
-      secrets/                overlay onto /, secret (bundle only, never in git)
+      secrets/                overlay onto /, secret (bundle, USB with --with-secrets, never in git)
       apps/<app>/files/       optional: files that belong to one app
       apps/<app>/secrets/
       hooks/*.sh
@@ -262,9 +262,11 @@ change to a unit, a log cap or a vhost therefore reaches a running node the same
 new one. A path that appears in two layers is an error, except platform files that are
 deliberately overridden (`/etc/docker/daemon.json`).
 
-`secrets` (node and app) go **only** into the bundle, root:root 0600 in 0700 directories,
-and never into ignition (which sits unencrypted on the USB). A freshly installed node
-therefore has secrets only after its first app bundle.
+`secrets` (node and app) go into the bundle, root:root 0600 in 0700 directories, and never
+into ignition (`flatcar-install` keeps that on the node for good). A freshly installed node
+therefore has secrets only after its first app bundle, and a USB build warns about every node
+that needs one. With `--with-secrets` they sit next to the ignition on the USB and
+`install-flatcar.sh` copies them to the new root.
 
 `replace_dirs` are replaced as a whole (`/opt/compose/compose.d` always); in all other
 directories files are overwritten and extra files on the node stay.
@@ -355,7 +357,7 @@ platform's.
 
 ```
 build-flatcar.sh <deployment-dir> [--mode usb|os|app] [--node N]... [--app A]...
-                 [--out DIR] [--check]
+                 [--with-secrets] [--out DIR] [--check]
 ```
 
 | | Flatcar image + installer | OS payload | platform + node overlay | apps | reboot |

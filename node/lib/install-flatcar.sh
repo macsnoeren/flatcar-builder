@@ -58,4 +58,24 @@ done < "${NODE_DIR}/images.list"
 cp "${USB_DIR}/bin/docker-compose" "${mnt}/opt/bin/docker-compose"
 chmod 0755 "${mnt}/opt/bin/docker-compose"
 
-echo "[+] Done. Reboot the machine. Its secrets arrive with the first app bundle."
+# Secrets, when the USB was built with --with-secrets: the same result as a bundle,
+# root:root 0600, and 0700 for the directory holding them. A file directly in a
+# top-level directory leaves that alone: /etc may not exist yet on a new root, and
+# a 0700 /etc would lock everyone but root out of it.
+if [[ -d "${NODE_DIR}/secrets" ]]; then
+  echo "[+] Copying the secrets onto the new root"
+  umask 022                    # the directories end up on the node, whatever this system's umask is
+  while IFS= read -r -d '' rel; do
+    dest="${mnt}/${rel}"
+    parent="$(dirname "${dest}")"
+    if [[ ! -d "${parent}" ]]; then
+      mkdir -p "$(dirname "${parent}")"
+      if [[ "${rel}" == */*/* ]]; then mkdir -m 0700 "${parent}"; else mkdir "${parent}"; fi
+    fi
+    install -o root -g root -m 0600 "${NODE_DIR}/secrets/${rel}" "${dest}"
+    echo "  ${rel}"            # the name, never the contents
+  done < <(cd "${NODE_DIR}/secrets" && find . -type f -printf '%P\0' | sort -z)
+  echo "[+] Done. Reboot the machine."
+else
+  echo "[+] Done. Reboot the machine. Its secrets arrive with the first app bundle."
+fi

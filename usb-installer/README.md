@@ -132,7 +132,8 @@ build/usb/
 └── checksums.sha256
 ```
 
-A build carries no secrets; a node gets those with its first app bundle.
+By default a build carries no secrets; a node gets those with its first app bundle. With
+`--with-secrets` it does, unencrypted, under `nodes/<node>/secrets/`.
 
 `build/usb/` is rebuilt on every usb run, so copy it to a directory of its own
 on the stick. Several builds live side by side, each in a directory whose name
@@ -200,8 +201,9 @@ at its minimum size of 1 GiB and grown when the stick is written.
    node's `node.env` (`install_device` in its `node.yml`). The script wipes that
    disk, installs Flatcar with the node's Ignition configuration, and copies the
    node's docker images and docker-compose onto the new root.
-6. Reboot. The node comes up with its apps, but without secrets: send it its
-   first app bundle (see [Updating a node](../README.md#updating-a-node)).
+6. Reboot. The node comes up with its apps. Without `--with-secrets` it has no
+   secrets yet: send it its first app bundle (see
+   [Updating a node](../README.md#updating-a-node)).
    Every later update goes the same way, never through this USB.
 
 The kernel is given both a video and a serial console, and GRUB adds a serial
@@ -216,9 +218,9 @@ holding it can take over a node that will boot from USB. Store it as a physical
 key, and consider the firmware settings of the nodes — boot order, a firmware
 password, and whether USB boot is enabled at all — part of the same control.
 
-The builds on the stick hold no secrets, but they are not encrypted either:
-the Ignition configurations contain the SSH public keys and, if one is set,
-the password hash of user `core`.
+The builds on the stick are not encrypted: the Ignition configurations contain
+the SSH public keys and, if one is set, the password hash of user `core`. A build
+made with `--with-secrets` also holds the secrets of its nodes.
 
 Root without a password is set by
 [`live/hooks/9000-console-root.hook.chroot`](live/hooks/9000-console-root.hook.chroot).

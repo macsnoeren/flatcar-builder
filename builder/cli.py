@@ -39,6 +39,9 @@ def parser() -> argparse.ArgumentParser:
                    help="build only this node; may be repeated (default: all nodes)")
     p.add_argument("--app", action="append", dest="apps", metavar="APP",
                    help="with --mode app: only this app; may be repeated")
+    p.add_argument("--with-secrets", action="store_true",
+                   help="with --mode usb: also put the secrets on the USB, unencrypted, so a node "
+                        "is complete after installation")
     p.add_argument("--out", metavar="DIR", help="output directory (default: <deployment>/build)")
     p.add_argument("--check", action="store_true", help="validate only: no download, no build")
     p.add_argument("--version", action="version", version=f"Flatcar Builder {tool_version()}")
@@ -49,6 +52,8 @@ def parse_args(argv: list) -> argparse.Namespace:
     args = parser().parse_args(argv)
     if args.apps and args.mode != "app":
         raise UsageError(f"--app only works with --mode app (a {args.mode} build carries every app)")
+    if args.with_secrets and args.mode != "usb":
+        raise UsageError(f"--with-secrets only works with --mode usb (a {args.mode} bundle always carries them)")
     return args
 
 
@@ -123,8 +128,13 @@ def run(args) -> int:
     if args.mode == "usb":
         log.info("Building the USB")
         dest = usb.build(dep, [n for n, _ in selection], tars, out / "usb", work, version,
-                         image, installer, compose_bin)
+                         image, installer, compose_bin, with_secrets=args.with_secrets)
         log.info(f"Done: {dest}")
+        if not args.with_secrets:
+            for node, _ in selection:
+                if rootfs.secrets_tree(node).paths():
+                    log.warn(f"node {node.name}: its secrets are not on this USB, so it still needs an "
+                             "app bundle after installation (or build with --with-secrets)")
         return 0
 
     when = bundle.stamp()

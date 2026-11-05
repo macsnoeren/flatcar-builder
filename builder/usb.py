@@ -2,8 +2,10 @@
 
 flatcar-install repartitions the whole disk, so this is for a first install
 only. An installed node is updated with an os bundle (A/B), never from here.
-The USB carries no secrets: it is not encrypted, and a node gets its secrets
-with its first app bundle.
+By default the USB carries no secrets: it is not encrypted, and a node gets its
+secrets with its first app bundle. With --with-secrets they sit next to each
+node's ignition, and install-flatcar.sh copies them onto the new root. They never
+go into the ignition itself, because flatcar-install keeps that on the node for good.
 """
 
 import datetime
@@ -11,13 +13,14 @@ import os
 import shutil
 from pathlib import Path
 
-from . import NODE_DIR, butane, fetch, rootfs, tool_version
+from . import NODE_DIR, butane, fetch, log, rootfs, tool_version
 from .bundle import _link_or_copy, checksums
 from .config import Deployment
 
 
 def build(dep: Deployment, nodes: list, tars: dict, out: Path, work: Path, flatcar_version: str,
-          image: Path, installer: Path, compose_bin: Path, make_ignition=True) -> Path:
+          image: Path, installer: Path, compose_bin: Path, make_ignition=True,
+          with_secrets=False) -> Path:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -41,6 +44,11 @@ def build(dep: Deployment, nodes: list, tars: dict, out: Path, work: Path, flatc
         for f in ("config.bu", "config.ign"):
             if (ign_dir / f).exists():
                 shutil.copyfile(ign_dir / f, nd / f)
+        if with_secrets:
+            secrets = rootfs.secrets_tree(node)
+            secrets.write(nd / "secrets")
+            for p in secrets.paths():
+                log.info(f"    secret: {p}")
         (nd / "node.env").write_text(f"HOSTNAME='{node.hostname}'\nINSTALL_DEVICE='{node.install_device}'\n")
         names = sorted({img.name for app in node.apps for img in app.images})
         (nd / "images.list").write_text("".join(f"{tars[n].name}\n" for n in names))
@@ -54,6 +62,8 @@ def build(dep: Deployment, nodes: list, tars: dict, out: Path, work: Path, flatc
     os.chmod(out / "scripts" / "install-flatcar.sh", 0o755)
 
     when = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    after = ("Then reboot. The node comes up with its secrets, which this USB holds unencrypted.\n"
+             if with_secrets else "Then reboot. The node has no secrets until its first app bundle.\n")
     (out / "README.txt").write_text(
         "Flatcar maintenance USB\n"
         "=======================\n\n"
@@ -63,7 +73,7 @@ def build(dep: Deployment, nodes: list, tars: dict, out: Path, work: Path, flatc
         "Install a node on an EMPTY machine (this wipes the whole disk), as root,\n"
         "from a rescue system or a live USB:\n\n"
         "  bash scripts/install-flatcar.sh <node> [device]\n\n"
-        "Then reboot. The node has no secrets until its first app bundle.\n"
+        + after +
         "An installed node is updated with an os/app bundle, never from here.\n")
 
     checksums(out)

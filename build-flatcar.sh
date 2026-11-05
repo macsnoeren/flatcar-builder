@@ -9,7 +9,7 @@
 # on a machine without it.
 #
 #   build-flatcar.sh <deployment-dir> [--mode usb|os|app] [--node N]... [--app A]...
-#                    [--out DIR] [--check]
+#                    [--with-secrets] [--out DIR] [--check]
 set -euo pipefail
 
 HERE="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
