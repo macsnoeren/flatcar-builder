@@ -10,6 +10,19 @@ first installation of an empty machine (or a reinstall that wipes the disk); an
 installed node is updated with an os or app bundle placed in `/opt/deploy`,
 never from this USB.
 
+From the root of `flatcar-builder`:
+
+```sh
+./usb-installer/build-usb.sh                          # once; the image is generic
+sudo ./usb-installer/write-usb.sh usb-installer/output/flatcar-maintenance-usb.img /dev/sdX
+
+./build-flatcar.sh my-deployment --mode usb --with-secrets
+
+sudo mount /dev/disk/by-label/FLATCAR-UPDATE /mnt
+sudo cp -a my-deployment/build/usb /mnt/2026-11-05-my-deployment
+sudo umount /mnt
+```
+
 ## What is on the image
 
 The image is a GPT disk image with four partitions. It is not an ISO written to
@@ -18,40 +31,36 @@ a stick.
 | # | Name | Type | Filesystem | Label | Contents |
 |---|------|------|------------|-------|----------|
 | 1 | `BIOS-BOOT` | `EF02` | none | — | embedded GRUB `core.img` for legacy BIOS boot |
-| 2 | `EFI` | `EF00` | FAT32 | `IB-EFI` | `EFI/BOOT/BOOTX64.EFI` for UEFI boot |
-| 3 | `LIVE` | `8300` | ext4 | `IB-LIVE` | kernel, initrd, squashfs and the GRUB configuration |
-| 4 | `UPDATE` | `8300` | ext4 | `IB-UPDATE` | one or more USB builds (`build-flatcar.sh --mode usb`) |
+| 2 | `EFI` | `EF00` | FAT32 | `FLATCAR-EFI` | `EFI/BOOT/BOOTX64.EFI` for UEFI boot |
+| 3 | `LIVE` | `8300` | ext4 | `FLATCAR-LIVE` | kernel, initrd, squashfs and the GRUB configuration |
+| 4 | `UPDATE` | `8300` | ext4 | `FLATCAR-UPDATE` | one or more USB builds (`build-flatcar.sh --mode usb`) |
 
 Partitions 1 and 2 make the same stick bootable on both legacy BIOS and UEFI
-firmware. Partition 4 is grown to fill the stick when the image is written, so
-builds can also be added after the fact.
+firmware. The image holds no builds, so it has no deployment or secrets in it.
+Partition 4 is grown to fill the stick when the image is written, and builds are
+copied onto it by hand.
 
 ## Building
 
-The build runs in a container so that the result does not depend on the
-distribution of the workstation. The container must be privileged: it creates
-loop devices and mounts filesystems through the host kernel.
-
 ```sh
-cd usb-installer
-
-docker build -t flatcar-maintenance-builder .
-
-mkdir -p output cache
-
-docker run --rm --privileged \
-    -v "$PWD/output:/output" \
-    -v "$PWD/update:/build/update:ro" \
-    -v "$PWD/cache:/build/cache" \
-    flatcar-maintenance-builder
+./usb-installer/build-usb.sh
 ```
 
-The result is `output/flatcar-maintenance-usb.img`. A full build takes roughly
-fifteen to thirty minutes, most of it spent bootstrapping Debian.
+This works from any directory and needs docker. The build runs in a container so
+that the result does not depend on the distribution of the workstation. The
+container is privileged: it creates loop devices and mounts filesystems through
+the host kernel.
 
-The cache volume is optional. live-build stores the bootstrap stage and the
-downloaded packages there, which shortens a repeated build considerably. Delete
-the directory to force a clean build.
+The result is `output/flatcar-maintenance-usb.img`. A build takes about ten
+minutes on a fast connection, and longer on a slow one. Because the image is
+generic, it only has to be built again when the live system changes.
+
+live-build keeps the bootstrap stage and the downloaded packages in the docker
+volume `flatcar-maintenance-cache`. To force a clean build:
+
+```sh
+docker volume rm flatcar-maintenance-cache
+```
 
 The build checks that every tool it needs is present before it starts, so a
 missing dependency fails within a second rather than after the bootstrap.
@@ -63,16 +72,13 @@ disk.
 
 ### Build parameters
 
-Each is passed with `docker run -e NAME=value`.
+Set them in the environment of `build-usb.sh`, for example
+`SMOKE_TEST=0 ./usb-installer/build-usb.sh`.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `EFI_SIZE_MB` | `128` | size of the EFI system partition in MiB |
 | `LIVE_EXTRA_MB` | `192` | headroom added to the measured size of the live system |
-| `UPDATE_SIZE_MB` | content + 512, minimum 1024 | fixed size of the UPDATE partition in MiB |
-| `LIVE_LABEL` | `IB-LIVE` | filesystem label of the LIVE partition |
-| `UPDATE_LABEL` | `IB-UPDATE` | filesystem label of the UPDATE partition |
-| `EFI_LABEL` | `IB-EFI` | filesystem label of the EFI partition |
 | `SMOKE_TEST` | `1` | run the QEMU boot test; `0` skips it |
 
 ### The boot smoke test
@@ -101,17 +107,22 @@ device.
 sudo ./write-usb.sh output/flatcar-maintenance-usb.img /dev/sdX
 ```
 
-The script refuses a partition (`/dev/sdb1`) instead of a whole disk, refuses a
-device that is too small, refuses a device with mounted partitions, and asks for
-the device path to be typed back before it writes anything. Pass `--yes` as a
-third argument to skip the confirmation in automated use.
+The script refuses a partition (`/dev/sdb1`) instead of a whole disk, a device
+that is too small, and a disk with anything mounted from it, also through LVM or
+LUKS. It refuses a disk that is not removable or on USB, unless you pass
+`--force`. It asks for the device path to be typed back before it writes
+anything; pass `--yes` to skip that in automated use.
 
-After the copy it does two things that a plain `dd` does not:
+Use this script and not a plain `dd`. After the copy it does two things that
+`dd` does not:
 
 1. It moves the backup GPT to the last sectors of the device. Firmware that
    finds a GPT whose backup header is missing or misplaced rejects the disk, and
    the failure presents as a stick that is detected but never boots.
 2. It grows the UPDATE partition and its filesystem to fill the remaining space.
+   Without this the partition stays 1 GiB, which is too small for most builds.
+
+It ends by printing how to add a build.
 
 ## The USB builds
 
@@ -136,8 +147,16 @@ By default a build carries no secrets; a node gets those with its first app bund
 `--with-secrets` it does, unencrypted, under `nodes/<node>/secrets/`.
 
 `build/usb/` is rebuilt on every usb run, so copy it to a directory of its own
-on the stick. Several builds live side by side, each in a directory whose name
-starts with the date it was produced:
+on the stick. Mount the UPDATE partition of a written stick and copy the build:
+
+```sh
+sudo mount /dev/disk/by-label/FLATCAR-UPDATE /mnt
+sudo cp -a /path/to/my-deployment/build/usb /mnt/2026-10-20-my-deployment
+sudo umount /mnt
+```
+
+Several builds live side by side, each in a directory whose name starts with the
+date it was produced:
 
 ```
 /update/
@@ -154,30 +173,21 @@ The maintenance shell finds them by structure rather than by name: a directory
 counts as a build when it holds `scripts/install-flatcar.sh`. The naming scheme
 is therefore free, and only the ordering of the list depends on it.
 
-Builds reach the stick in one of two ways. Either the directory is placed in
-[`update/`](update) before the image is built, or it is copied onto the UPDATE
-partition of a stick that has already been written. The second way is the usual
-one once a stick exists, and is why the partition is grown to fill the device.
-
-To include a build at build time, copy it into `update/` first:
-
-```sh
-cp -r /path/to/my-deployment/build/usb update/2026-10-20-my-deployment
-```
-
-To add one to a stick that is already written, mount its UPDATE partition and
-copy it there:
-
-```sh
-sudo mount /dev/disk/by-label/IB-UPDATE /mnt
-sudo cp -r /path/to/my-deployment/build/usb /mnt/2026-10-20-my-deployment
-sudo umount /mnt
-```
-
 The size of a build is mostly the Flatcar image plus the docker images of its
-nodes, so the partition is sized to its contents; see [Building](#building).
-`update/` may also be left empty, in which case the UPDATE partition is created
-at its minimum size of 1 GiB and grown when the stick is written.
+nodes, so check that the stick has room for it.
+
+### What a build needs
+
+The installer does not depend on Flatcar Builder. Any directory with these works:
+
+| Path | Meaning |
+|------|---------|
+| `scripts/install-flatcar.sh` | run as root with `<node> [device]`; wipes the device and installs |
+| `nodes/<node>/` | one directory per node that can be installed |
+| `checksums.sha256` | SHA-256 of every file, relative to the build; the operator checks it before installing |
+
+The maintenance shell also shows the line `Flatcar <channel> <version> (<arch>)`
+from `README.txt`, when a build has one.
 
 ## Using the USB on a node
 
@@ -187,28 +197,32 @@ at its minimum size of 1 GiB and grown when the stick is written.
    adds `nomodeset` for hardware whose graphics fail to initialise; a third
    boots verbosely for diagnosis.
 4. The live system starts `flatcar-maintenance.service`, which mounts the
-   partition labelled `IB-UPDATE` at `/update`, lists the disks of the node and
-   the builds on the stick, and opens a root shell inside the first build.
-5. Install the node from the build of choice:
+   partition labelled `FLATCAR-UPDATE` at `/update`, lists the disks of the node,
+   says which one is the stick, lists the builds on the stick, and opens a root
+   shell inside the first build.
+5. Check the build of choice and install the node from it:
 
    ```sh
    cd /update/<build>
+   sha256sum -c --quiet checksums.sha256
    ./scripts/install-flatcar.sh <node-name> [device]
    ```
+
+   `sha256sum` prints nothing when the build is intact. Do not go on when it
+   reports a file: `flatcar-install` does not verify a local image, and the disk
+   is wiped first.
 
    The node names are those under `nodes/` in that build, and the maintenance
    shell prints them. The target device defaults to `INSTALL_DEVICE` from the
    node's `node.env` (`install_device` in its `node.yml`). The script wipes that
    disk, installs Flatcar with the node's Ignition configuration, and copies the
-   node's docker images and docker-compose onto the new root.
+   node's docker images and docker-compose onto the new root. Neither it nor
+   `flatcar-install` checks that the disk is not the stick itself, so on a machine
+   where the stick is the `install_device`, name another device.
 6. Reboot. The node comes up with its apps. Without `--with-secrets` it has no
    secrets yet: send it its first app bundle (see
    [Updating a node](../README.md#updating-a-node)).
    Every later update goes the same way, never through this USB.
-
-The kernel is given both a video and a serial console, and GRUB adds a serial
-terminal when the node has a serial port, so a headless node can be serviced
-over a serial line.
 
 ## Physical access
 
@@ -222,12 +236,10 @@ The builds on the stick are not encrypted: the Ignition configurations contain
 the SSH public keys and, if one is set, the password hash of user `core`. A build
 made with `--with-secrets` also holds the secrets of its nodes.
 
-Root without a password is set by
-[`live/hooks/9000-console-root.hook.chroot`](live/hooks/9000-console-root.hook.chroot).
-Removing that hook restores a password prompt on the consoles that the
-maintenance shell does not own.
-
 ## Limitations
+
+**amd64 only.** GRUB is built for `i386-pc` and `x86_64-efi`, so a build for
+`arm64-usr` cannot be installed from this stick.
 
 **Secure Boot is not supported.** The UEFI bootloader is unsigned, and firmware
 with Secure Boot enabled declines it without a message. The symptom is a stick
@@ -241,14 +253,13 @@ EFI partition.
 
 | Path | Contents |
 |------|----------|
+| [`build-usb.sh`](build-usb.sh) | builds the image, from any directory |
 | [`Dockerfile`](Dockerfile) | the builder image: live-build, GRUB, disk tooling and QEMU |
 | [`build-usb-image.sh`](build-usb-image.sh) | the build itself, run inside the container |
 | [`write-usb.sh`](write-usb.sh) | writes the image to a stick and adapts it to its size |
 | [`live/package-lists/`](live/package-lists) | packages installed into the live system |
 | [`live/bin/`](live/bin) | the maintenance shell |
 | [`live/systemd/`](live/systemd) | the unit that starts it |
-| [`live/hooks/`](live/hooks) | live-build chroot hooks |
-| [`update/`](update) | USB builds to put on the UPDATE partition, bind-mounted at build time |
 | [`output/`](output) | where the built image is written |
 
 ## Design notes
@@ -296,7 +307,7 @@ input.
 **`metadata_csum_seed` and `orphan_file` are disabled on the ext4
 filesystems.** GRUB 2.06 cannot read an ext4 filesystem that uses them, and the
 resulting failure appears at boot as `unknown filesystem`. Debian bookworm
-disables both by default, but the base image is not pinned to a Debian release.
+disables both by default, but a newer release might not.
 
 **The video modules are built into both bootloader images.** Without them the
 `linux` loader cannot set any mode, not even a text one, and reports `No
@@ -317,8 +328,8 @@ parallel, which saves minutes on every installation.
 
 **Filesystem labels are prefixed.** A node under maintenance has its own disks
 attached, and both GRUB and the maintenance shell select partitions by label.
-`IB-LIVE` and `IB-UPDATE` are unlikely to collide where `LIVE` and `UPDATE`
-would.
+`FLATCAR-LIVE` and `FLATCAR-UPDATE` are unlikely to collide where `LIVE` and
+`UPDATE` would.
 
 ## Related documents
 

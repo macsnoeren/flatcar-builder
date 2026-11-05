@@ -25,9 +25,9 @@ FLATCAR_BUILDER_INTEGRATION=1 bash tests/run.sh -k real_butane   # also against 
 ```
 
 `tests/run.sh` runs shellcheck over an explicit list of scripts (`build-flatcar.sh`, `node/install.sh`,
-`node/lib/*.sh`, `node/rootfs/opt/bin/*.sh`, `tests/run.sh`). Add new shell scripts to that list.
-`usb-installer/` scripts are not linted or tested; its image is built with
-`docker build -t flatcar-maintenance-builder usb-installer` and a `--privileged` `docker run` (see its README).
+`node/lib/*.sh`, `node/rootfs/opt/bin/*.sh`, `tests/run.sh`, the `usb-installer/` scripts). Add new shell
+scripts to that list. `usb-installer/` has no tests beyond that; its image is built with
+`usb-installer/build-usb.sh`, which needs docker and a privileged container (see its README).
 
 ## Architecture
 
@@ -83,9 +83,8 @@ prunes extractions. `install.sh` verifies checksums and that the bundle is for t
 
 - `os-boot-check` (confirming the new A/B partition or falling back after an OS update) is not built
   yet; `os_boot_check.timeout` is parsed but unused. VM checks are still open. See `TASKS.md`.
-- `usb-installer/` still carries IronBridge naming (`IB-` labels, GRUB entries). `usb-installer/start.sh`
-  has hard-coded paths from the old repo. The maintenance shell looks for `Flatcar version:` in
-  `README.txt`, which `builder/usb.py` does not write.
+- The maintenance shell reads the line `Flatcar <channel> <version> (<arch>)` from the `README.txt` that
+  `builder/usb.py` writes. Keep that line, or change the two together.
 - User-facing docs (`README.md`, `DEPLOYMENT.md`, `usb-installer/README.md`) are in English and must
   not link to or cite `DESIGN.md` / `TASKS.md`. Those two are internal; `DESIGN.md` is in English,
   `TASKS.md` in Dutch. `TASKS.md` marks tasks `[x]` done and tested, `[~]` built with the VM check

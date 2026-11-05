@@ -1,5 +1,5 @@
 [Unit]
-Description=IronBridge Flatcar Maintenance Shell
+Description=Flatcar Maintenance Shell
 Documentation=file:///usr/local/bin/flatcar-maintenance
 After=local-fs.target systemd-udev-settle.service
 

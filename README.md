@@ -12,7 +12,7 @@ The repository has two parts:
   [`node/`](node)) reads a deployment directory and produces either the contents of an
   installation USB for empty machines, or a sealed update bundle per node.
 - **The USB installer** ([`usb-installer/`](usb-installer)) builds a bootable Debian live
-  image that carries those USB contents, so a node can be installed from a stick.
+  image. Copy those USB contents onto the stick, and a node can be installed from it.
 
 ```
 deployment dir ──► build-flatcar.sh --mode usb ──► build/usb/ ──► usb-installer ──► stick ──► empty machine
@@ -90,10 +90,11 @@ For an **empty** machine only: `flatcar-install` repartitions the whole disk.
 
 1. `build-flatcar.sh <deployment> --mode usb` writes the USB contents to
    `<deployment>/build/usb/`.
-2. Build the bootable stick with [`usb-installer/`](usb-installer/README.md) and copy the
-   USB contents onto its UPDATE partition.
-3. Boot the machine from the stick. The maintenance shell lists the builds and nodes on it;
-   install with `./scripts/install-flatcar.sh <node> [device]` and reboot.
+2. Make the bootable stick with [`usb-installer/`](usb-installer/README.md), and copy the
+   USB contents by hand onto its UPDATE partition.
+3. Boot the machine from the stick. The maintenance shell lists the builds and nodes on it.
+   Check the build with `sha256sum -c --quiet checksums.sha256`, install with
+   `./scripts/install-flatcar.sh <node> [device]` and reboot.
 4. Send the node its first app bundle. By default the USB carries no secrets, so a freshly
    installed node gets them only with that bundle. A USB built with `--with-secrets` holds
    them, and the node is complete after this install.

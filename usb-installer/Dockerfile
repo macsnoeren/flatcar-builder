@@ -1,18 +1,6 @@
-# Builder image for the IronBridge Flatcar maintenance USB.
+# Builder image for the Flatcar maintenance USB. build-usb.sh builds and runs it.
 #
-# Build:
-#     docker build -t flatcar-maintenance-builder .
-#
-# Run (privileged: the build creates loop devices and mounts filesystems):
-#     docker run --rm --privileged \
-#         -v "$PWD/output:/output" \
-#         -v "$PWD/update:/build/update:ro" \
-#         -v "$PWD/cache:/build/cache" \
-#         flatcar-maintenance-builder
-#
-# The cache volume is optional. live-build caches the bootstrap stage and the
-# downloaded packages there, which turns a repeated build from twenty minutes
-# into a few.
+# The run is privileged: the build creates loop devices and mounts filesystems.
 
 FROM debian:bookworm
 
@@ -67,10 +55,8 @@ RUN apt-get update && \
 
 RUN mkdir -p \
     /build/config/package-lists \
-    /build/config/hooks/normal \
     /build/config/includes.chroot/usr/local/bin \
     /build/config/includes.chroot/etc/systemd/system/multi-user.target.wants \
-    /build/update \
     /build/work \
     /build/cache \
     /output
@@ -103,23 +89,16 @@ RUN lb config \
 # -----------------------------------------------------------------------------
 
 COPY live/package-lists/ /build/config/package-lists/
-COPY live/hooks/ /build/config/hooks/normal/
 COPY live/bin/flatcar-maintenance /build/config/includes.chroot/usr/local/bin/flatcar-maintenance
 COPY live/systemd/flatcar-maintenance.service /build/config/includes.chroot/etc/systemd/system/flatcar-maintenance.service
 
-RUN chmod +x \
-        /build/config/includes.chroot/usr/local/bin/flatcar-maintenance \
-        /build/config/hooks/normal/*.hook.chroot && \
+RUN chmod +x /build/config/includes.chroot/usr/local/bin/flatcar-maintenance && \
     ln -sf \
         ../flatcar-maintenance.service \
         /build/config/includes.chroot/etc/systemd/system/multi-user.target.wants/flatcar-maintenance.service
 
 # -----------------------------------------------------------------------------
 # Build script
-#
-# The Flatcar update payload is not copied into the image. It is bind-mounted
-# at /build/update when the container runs, so a several hundred megabyte
-# payload never ends up in a Docker layer and can be replaced without a rebuild.
 # -----------------------------------------------------------------------------
 
 COPY build-usb-image.sh /build/build-usb-image.sh

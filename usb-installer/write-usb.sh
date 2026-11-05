@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Write the IronBridge Flatcar maintenance image to a USB stick and adapt it to
-# the size of that stick.
+# Write the Flatcar maintenance image to a USB stick and adapt it to the size of
+# that stick.
 #
 # The image is built to fit its contents, so it is almost always smaller than
 # the target device. Two things therefore happen after the copy:
@@ -14,7 +14,10 @@
 #
 # Usage:
 #
-#     sudo ./write-usb.sh <image> <device> [--yes]
+#     sudo ./write-usb.sh <image> <device> [--yes] [--force]
+#
+#     --yes     do not ask to type the device path
+#     --force   also write to a disk that is not removable or on USB
 #
 # Example:
 #
@@ -33,7 +36,7 @@ fail()
 
 usage()
 {
-    echo "Usage: $0 <image> <device> [--yes]" >&2
+    echo "Usage: $0 <image> <device> [--yes] [--force]" >&2
     exit 2
 }
 
@@ -41,7 +44,18 @@ usage()
 
 IMAGE="$1"
 DEVICE="$2"
-ASSUME_YES="${3:-}"
+shift 2
+
+ASSUME_YES=0
+FORCE=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --yes)   ASSUME_YES=1 ;;
+        --force) FORCE=1 ;;
+        *)       usage ;;
+    esac
+done
 
 # =============================================================================
 # Checks
@@ -68,10 +82,22 @@ if [ "$IMAGE_BYTES" -gt "$DEVICE_BYTES" ]; then
     fail "image is $((IMAGE_BYTES / 1048576)) MiB but $DEVICE is only $((DEVICE_BYTES / 1048576)) MiB"
 fi
 
-if grep -q "^${DEVICE}" /proc/mounts; then
-    echo "Mounted partitions on $DEVICE:"
-    grep "^${DEVICE}" /proc/mounts | sed 's/^/  /'
+# lsblk follows the disk upwards, through LVM and LUKS. /proc/mounts lists those
+# as /dev/mapper/..., so the disk of a workstation can look unused there.
+MOUNTED="$(lsblk -nr -o MOUNTPOINT "$DEVICE" | sed '/^$/d')"
+
+if [ -n "$MOUNTED" ]; then
+    echo "Mounted from $DEVICE:"
+    echo "$MOUNTED"
     fail "unmount them before writing"
+fi
+
+# Two calls, because an empty TRAN shifts the columns of a combined one.
+TRAN="$(lsblk -dno TRAN "$DEVICE" | tr -d ' ')"
+REMOVABLE="$(lsblk -dno RM "$DEVICE" | tr -d ' ')"
+
+if [ "$TRAN" != "usb" ] && [ "$REMOVABLE" != "1" ] && [ "$FORCE" -ne 1 ]; then
+    fail "$DEVICE is not removable or on USB. Pass --force if this is the right disk"
 fi
 
 # =============================================================================
@@ -88,7 +114,7 @@ echo
 echo "EVERYTHING ON $DEVICE WILL BE DESTROYED."
 echo
 
-if [ "$ASSUME_YES" != "--yes" ]; then
+if [ "$ASSUME_YES" -ne 1 ]; then
     read -r -p "Type the device path to confirm: " CONFIRM
     [ "$CONFIRM" = "$DEVICE" ] || fail "confirmation did not match, nothing was written"
 fi
@@ -162,4 +188,12 @@ echo
 lsblk -o NAME,SIZE,LABEL,FSTYPE "$DEVICE"
 
 echo
-echo "Done. The USB stick is ready."
+cat <<'EOF'
+Done. The USB stick is ready, but it holds no build yet. To add one:
+
+  sudo mount /dev/disk/by-label/FLATCAR-UPDATE /mnt
+  sudo cp -a <deployment>/build/usb /mnt/<date>-<deployment>
+  sudo umount /mnt
+
+Use a new directory for every build. A stick can hold several.
+EOF

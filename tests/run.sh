@@ -14,7 +14,9 @@ rc=0
 PYTHONPATH="${TOOL}" python3 -m unittest discover -s "${HERE}" -t "${TOOL}" "$@" || rc=1
 
 if [[ $# -eq 0 ]]; then
-  scripts=(build-flatcar.sh node/install.sh node/lib/*.sh node/rootfs/opt/bin/*.sh tests/run.sh)
+  scripts=(build-flatcar.sh node/install.sh node/lib/*.sh node/rootfs/opt/bin/*.sh tests/run.sh
+           usb-installer/build-usb.sh usb-installer/build-usb-image.sh usb-installer/write-usb.sh
+           usb-installer/live/bin/flatcar-maintenance)
   if command -v shellcheck >/dev/null 2>&1; then
     lint=(shellcheck)
   elif command -v docker >/dev/null 2>&1 && docker image inspect koalaman/shellcheck:stable >/dev/null 2>&1; then

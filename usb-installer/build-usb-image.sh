@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build the IronBridge Flatcar maintenance USB image.
+# Build the Flatcar maintenance USB image.
 #
 # Runs inside the builder container described by the Dockerfile next to this
 # script. The container must be started with --privileged, because the build
@@ -15,11 +15,8 @@
 #
 #   EFI_SIZE_MB      size of the EFI system partition in MiB   (default 128)
 #   LIVE_EXTRA_MB    headroom on top of the live files in MiB  (default 192)
-#   UPDATE_SIZE_MB   size of the UPDATE partition in MiB       (default: content + 512, minimum 1024)
-#   LIVE_LABEL       filesystem label of the LIVE partition    (default IB-LIVE)
-#   UPDATE_LABEL     filesystem label of the UPDATE partition  (default IB-UPDATE)
-#   EFI_LABEL        filesystem label of the EFI partition     (default IB-EFI)
 #   SMOKE_TEST       run the QEMU boot test, 1 or 0            (default 1)
+#   OWNER            uid:gid that gets the finished image      (default: root)
 #
 
 set -euo pipefail
@@ -32,25 +29,27 @@ OUTPUT="/output/flatcar-maintenance-usb.img"
 
 EFI_SIZE_MB="${EFI_SIZE_MB:-128}"
 LIVE_EXTRA_MB="${LIVE_EXTRA_MB:-192}"
-UPDATE_SIZE_MB="${UPDATE_SIZE_MB:-}"
 
-LIVE_LABEL="${LIVE_LABEL:-IB-LIVE}"
-UPDATE_LABEL="${UPDATE_LABEL:-IB-UPDATE}"
-EFI_LABEL="${EFI_LABEL:-IB-EFI}"
+# The image holds no builds: they are copied onto the stick after it is written,
+# and write-usb.sh grows this partition to fill the stick.
+UPDATE_SIZE_MB=1024
+
+# The maintenance shell looks for UPDATE_LABEL too; keep the two the same.
+LIVE_LABEL="FLATCAR-LIVE"
+UPDATE_LABEL="FLATCAR-UPDATE"
+EFI_LABEL="FLATCAR-EFI"
 
 SMOKE_TEST="${SMOKE_TEST:-1}"
 
 # Marker printed by GRUB before the menu is drawn. The smoke test greps the
 # emulated serial console for it, which proves the whole bootloader chain.
-GRUB_MARKER="IRONBRIDGE-GRUB-OK"
+GRUB_MARKER="FLATCAR-USB-GRUB-OK"
 
 BUILD="/build"
 WORK="$BUILD/work"
-UPDATE_SRC="$BUILD/update"
 
 MOUNT_EFI="$WORK/mnt-efi"
 MOUNT_LIVE="$WORK/mnt-live"
-MOUNT_UPDATE="$WORK/mnt-update"
 ISO_MOUNT="$WORK/iso"
 
 LOOP=""
@@ -89,7 +88,6 @@ cleanup()
 
     sync
 
-    mountpoint -q "$MOUNT_UPDATE" && umount "$MOUNT_UPDATE"
     mountpoint -q "$MOUNT_LIVE" && umount "$MOUNT_LIVE"
     mountpoint -q "$MOUNT_EFI" && umount "$MOUNT_EFI"
     mountpoint -q "$ISO_MOUNT" && umount "$ISO_MOUNT"
@@ -98,6 +96,9 @@ cleanup()
     [ -n "$LOOP_LIVE" ] && losetup -d "$LOOP_LIVE" 2>/dev/null
     [ -n "$LOOP_EFI" ] && losetup -d "$LOOP_EFI" 2>/dev/null
     [ -n "$LOOP" ] && losetup -d "$LOOP" 2>/dev/null
+
+    # Here, so a failed build leaves nothing behind that only root can remove.
+    [ -n "${OWNER:-}" ] && [ -e "$OUTPUT" ] && chown "$OWNER" "$OUTPUT"
 
     return 0
 }
@@ -108,7 +109,7 @@ trap cleanup EXIT
 # Prepare working directories and loop device nodes
 # =============================================================================
 
-mkdir -p "$WORK" "$MOUNT_EFI" "$MOUNT_LIVE" "$MOUNT_UPDATE" "$ISO_MOUNT" "$UPDATE_SRC"
+mkdir -p "$WORK" "$MOUNT_EFI" "$MOUNT_LIVE" "$ISO_MOUNT"
 
 echo "Preparing loop device nodes..."
 
@@ -228,16 +229,6 @@ LIVE_BYTES=$((
 
 LIVE_SIZE_MB=$(((LIVE_BYTES / 1048576) * 110 / 100 + LIVE_EXTRA_MB))
 
-if [ -z "$UPDATE_SIZE_MB" ]; then
-
-    UPDATE_CONTENT_MB=$(($(du -sk "$UPDATE_SRC" | cut -f1) / 1024))
-    UPDATE_SIZE_MB=$((UPDATE_CONTENT_MB + 512))
-
-    if [ "$UPDATE_SIZE_MB" -lt 1024 ]; then
-        UPDATE_SIZE_MB=1024
-    fi
-fi
-
 BIOS_START=$MIB_SECTORS
 BIOS_END=$((BIOS_START + MIB_SECTORS - 1))
 
@@ -328,7 +319,7 @@ echo "  UPDATE = $LOOP_UPDATE"
 # metadata_csum_seed and orphan_file are disabled explicitly. GRUB 2.06 cannot
 # read an ext4 filesystem that uses them, and the resulting failure looks like
 # "unknown filesystem" at boot. Debian bookworm's mke2fs happens to disable
-# both by default, but the base image is not pinned to a Debian release.
+# both by default, but a newer release might not.
 # =============================================================================
 
 step "5. Creating filesystems"
@@ -341,7 +332,6 @@ mkfs.ext4 -q -F -O "$EXT4_OPTS" -L "$UPDATE_LABEL" "$LOOP_UPDATE"
 
 mount "$LOOP_EFI" "$MOUNT_EFI"
 mount "$LOOP_LIVE" "$MOUNT_LIVE"
-mount "$LOOP_UPDATE" "$MOUNT_UPDATE"
 
 # =============================================================================
 # 6. Install the live system
@@ -400,11 +390,9 @@ else
     set gfxpayload=text
 fi
 
-# A serial console is useful on headless server hardware, and the build-time
-# smoke test reads the marker below from the emulated serial port. Machines
-# without a serial port simply keep the video console.
+# Only for the build-time smoke test, which reads the marker below from the
+# emulated serial port. The stick itself is used on the video console.
 if serial --unit=0 --speed=115200; then
-    terminal_input --append serial
     terminal_output --append serial
 fi
 
@@ -412,19 +400,19 @@ echo "$GRUB_MARKER"
 
 search --no-floppy --label $LIVE_LABEL --set=root
 
-menuentry "IronBridge Flatcar Maintenance" {
-    linux /live/vmlinuz boot=live components console=ttyS0,115200n8 console=tty0
+menuentry "Flatcar Maintenance" {
+    linux /live/vmlinuz boot=live components console=tty0
     initrd /live/initrd.img
 }
 
-menuentry "IronBridge Flatcar Maintenance (safe graphics)" {
+menuentry "Flatcar Maintenance (safe graphics)" {
     set gfxpayload=text
     linux /live/vmlinuz boot=live components nomodeset console=tty0
     initrd /live/initrd.img
 }
 
-menuentry "IronBridge Flatcar Maintenance (verbose boot)" {
-    linux /live/vmlinuz boot=live components debug console=ttyS0,115200n8 console=tty0
+menuentry "Flatcar Maintenance (verbose boot)" {
+    linux /live/vmlinuz boot=live components debug console=tty0
     initrd /live/initrd.img
 }
 EOF
@@ -548,40 +536,10 @@ fi
 echo "core.img: $CORE_BYTES bytes, embedded in the BIOS boot partition."
 
 # =============================================================================
-# 10. Install the Flatcar update payload
+# 10. Verification
 # =============================================================================
 
-step "10. Installing the Flatcar update payload"
-
-# README.md documents the directory for whoever builds the image and is not part
-# of the payload, so it is excluded and does not count towards "is there a
-# payload at all".
-PAYLOAD_COUNT="$(find "$UPDATE_SRC" -mindepth 1 -maxdepth 1 -not -name 'README.md' -printf 'x' | wc -c)"
-
-if [ "$PAYLOAD_COUNT" -gt 0 ]; then
-
-    find "$UPDATE_SRC" -mindepth 1 -maxdepth 1 -not -name 'README.md' \
-        -exec cp -a {} "$MOUNT_UPDATE/" \;
-
-    find "$MOUNT_UPDATE" -maxdepth 1 -name '*.sh' -exec chmod +x {} +
-
-    if [ -f "$MOUNT_UPDATE/flatcar_production_update.gz" ]; then
-        echo "Creating SHA256SUMS..."
-        ( cd "$MOUNT_UPDATE" && sha256sum flatcar_production_update.gz > SHA256SUMS )
-    fi
-
-else
-    echo "No update payload present. Mount one at $UPDATE_SRC to include it,"
-    echo "or copy files onto the UPDATE partition after writing the USB."
-fi
-
-sync
-
-# =============================================================================
-# 11. Verification
-# =============================================================================
-
-step "11. Verifying the image contents"
+step "10. Verifying the image contents"
 
 echo "EFI:"
 find "$MOUNT_EFI" -type f -printf '  %P (%s bytes)\n'
@@ -596,12 +554,8 @@ echo "  boot/grub/grub.cfg"
 echo "  boot/grub/i386-pc/    ($(find "$MOUNT_LIVE/boot/grub/i386-pc" -name '*.mod' | wc -l) modules)"
 echo "  boot/grub/x86_64-efi/ ($(find "$MOUNT_LIVE/boot/grub/x86_64-efi" -name '*.mod' | wc -l) modules)"
 
-echo
-echo "UPDATE:"
-find "$MOUNT_UPDATE" -maxdepth 2 -type f -printf '  %P\n' | sort
-
 # Release everything before the image is booted by QEMU.
-umount "$MOUNT_UPDATE" "$MOUNT_LIVE" "$MOUNT_EFI"
+umount "$MOUNT_LIVE" "$MOUNT_EFI"
 losetup -d "$LOOP_UPDATE"; LOOP_UPDATE=""
 losetup -d "$LOOP_LIVE"; LOOP_LIVE=""
 losetup -d "$LOOP_EFI"; LOOP_EFI=""
@@ -613,7 +567,7 @@ echo
 sgdisk --print "$OUTPUT"
 
 # =============================================================================
-# 12. Boot smoke test
+# 11. Boot smoke test
 #
 # Boots the finished image under QEMU in both firmware modes and checks that
 # GRUB reaches its configuration. This catches a broken bootloader chain here
@@ -622,7 +576,7 @@ sgdisk --print "$OUTPUT"
 
 if [ "$SMOKE_TEST" = "1" ] && command -v qemu-system-x86_64 >/dev/null; then
 
-    step "12. Boot smoke test"
+    step "11. Boot smoke test"
 
     OVMF=""
     for candidate in \
@@ -695,7 +649,7 @@ if [ "$SMOKE_TEST" = "1" ] && command -v qemu-system-x86_64 >/dev/null; then
     fi
 
 else
-    step "12. Boot smoke test skipped"
+    step "11. Boot smoke test skipped"
 fi
 
 # =============================================================================

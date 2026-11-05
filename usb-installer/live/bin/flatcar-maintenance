@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Maintenance shell of the IronBridge Flatcar maintenance USB.
+# Maintenance shell of the Flatcar maintenance USB.
 #
 # Started by flatcar-maintenance.service on tty1 once the live system is up.
 # It mounts the UPDATE partition, reports which deployment builds are on the
@@ -17,12 +17,13 @@
 
 set -u
 
-UPDATE_LABEL="${UPDATE_LABEL:-IB-UPDATE}"
+# build-usb-image.sh gives the partition this label; keep the two the same.
+UPDATE_LABEL="FLATCAR-UPDATE"
 UPDATE_MOUNT="/update"
 
 echo
 echo "=============================================="
-echo "   IronBridge Flatcar Maintenance Environment"
+echo "   Flatcar Maintenance Environment"
 echo "=============================================="
 echo
 
@@ -52,6 +53,12 @@ fi
 echo
 echo "Disks in this machine:"
 lsblk -d -o NAME,SIZE,MODEL,TRAN 2>/dev/null | sed 's/^/  /'
+
+# flatcar-install does not know which disk it runs from, so the operator must.
+if [ -n "$UPDATE_DEVICE" ]; then
+    STICK="$(lsblk -no PKNAME "$UPDATE_DEVICE" 2>/dev/null | sed -n 1p)"
+    [ -n "$STICK" ] && echo && echo "  This stick is /dev/$STICK. Do not install on it."
+fi
 
 # -----------------------------------------------------------------------------
 # Find the builds on the stick
@@ -98,7 +105,7 @@ else
 
         version=""
         if [ -f "$dir/README.txt" ]; then
-            version="$(awk -F': *' '/^Flatcar version:/ {print $2; exit}' "$dir/README.txt")"
+            version="$(awk '/^Flatcar [a-z]+ [0-9]/ {sub(/^Flatcar /, ""); print; exit}' "$dir/README.txt")"
         fi
 
         printf '  %d. %s\n' "$index" "$name"
@@ -107,7 +114,7 @@ else
         printf '\n'
 
         if [ -d "$dir/nodes" ]; then
-            nodes="$(ls -1 "$dir/nodes" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+            nodes="$(find "$dir/nodes" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tr '\n' ' ' | sed 's/ *$//')"
             [ -n "$nodes" ] && printf '     nodes: %s\n' "$nodes"
         fi
 
@@ -124,7 +131,11 @@ else
     echo "  directory from the list to install a different one."
     echo
     echo "      cd $NEWEST"
+    echo "      sha256sum -c --quiet checksums.sha256"
     echo "      ./scripts/install-flatcar.sh <node-name> [device]"
+    echo
+    echo "  sha256sum prints nothing when the build is intact. Do not install"
+    echo "  when it reports a file: the installer wipes the disk first."
     echo
     echo "  The target device defaults to INSTALL_DEVICE from the node's"
     echo "  node.env. The machine has to be rebooted afterwards."
